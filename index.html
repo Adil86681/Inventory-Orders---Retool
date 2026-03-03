@@ -1,0 +1,538 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Inventory Orders Dashboard — 2026</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Inter:wght@400;500;600;700;800&family=Syne:wght@600;700;800&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0d0f14;
+    --surface: #141720;
+    --surface2: #181c27;
+    --border: #1e2230;
+    --text: #f0f2ff;
+    --muted: #6b7280;
+    --accent: #e8ff47;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: var(--bg); color: var(--text); font-family: 'Syne', sans-serif; min-height: 100vh; }
+  body::before {
+    content: ''; position: fixed; inset: 0;
+    background-image: linear-gradient(rgba(232,255,71,0.018) 1px,transparent 1px), linear-gradient(90deg,rgba(232,255,71,0.018) 1px,transparent 1px);
+    background-size: 40px 40px; pointer-events: none; z-index: 0;
+  }
+  .wrap { position: relative; z-index: 1; max-width: 1360px; margin: 0 auto; padding: 36px 22px; }
+
+  /* Header */
+  header { display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 16px; margin-bottom: 40px; }
+  h1 { font-size: clamp(26px,4vw,46px); font-weight: 800; letter-spacing: -1px; line-height: 1.05; }
+  h1 span { color: var(--accent); }
+  .subtitle { font-family: 'DM Mono', monospace; font-size: 11px; color: var(--muted); margin-top: 8px; letter-spacing: .08em; }
+
+  /* Upload */
+  .upload-box { background: var(--surface); border: 1.5px dashed var(--border); border-radius: 12px; padding: 18px 26px; cursor: pointer; text-align: center; transition: border-color .2s, background .2s; min-width: 230px; }
+  .upload-box:hover, .upload-box.drag { border-color: var(--accent); background: #181c27; }
+  .upload-box strong { font-size: 14px; display: block; }
+  .upload-box p { font-size: 11px; color: var(--muted); margin-top: 4px; }
+  #fname { font-size: 10px; color: var(--accent); font-family: 'DM Mono', monospace; margin-top: 5px; display: block; }
+  #fileInput { display: none; }
+
+  /* KPI */
+  .kpi-grid { display: grid; grid-template-columns: repeat(auto-fit,minmax(165px,1fr)); gap: 14px; margin-bottom: 36px; }
+  .kpi { background: var(--surface); border: 1px solid var(--border); border-top: 2px solid var(--kc,var(--accent)); border-radius: 14px; padding: 20px 18px; }
+  .kpi-label { font-family: 'DM Mono', monospace; font-size: 10px; color: var(--muted); letter-spacing: .1em; text-transform: uppercase; margin-bottom: 10px; }
+  .kpi-val { font-size: clamp(28px,3vw,42px); font-weight: 800; font-family: 'Inter', sans-serif; color: var(--kc,var(--accent)); letter-spacing: -0.5px; line-height: 1; }
+
+  /* Section title */
+  .section-title { font-family: 'DM Mono', monospace; font-size: 10px; font-weight: 700; letter-spacing: .14em; text-transform: uppercase; color: var(--muted); display: flex; align-items: center; gap: 12px; margin-bottom: 16px; }
+  .section-title::after { content: ''; flex: 1; height: 1px; background: var(--border); }
+
+  /* Chart cards */
+  .charts-row { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; margin-bottom: 18px; }
+  @media (max-width: 860px) { .charts-row { grid-template-columns: 1fr; } }
+  .chart-card { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 22px 20px; }
+  .chart-card.full { grid-column: 1 / -1; }
+  .chart-wrap { position: relative; height: 260px; width: 100%; overflow: hidden; }
+  .chart-wrap.short { height: 160px; }
+  .card-title { font-family: 'DM Mono', monospace; font-size: 10px; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); margin-bottom: 18px; display: flex; align-items: center; gap: 8px; }
+  .card-title::before { content:''; width:6px; height:6px; border-radius:50%; background:var(--accent); display:inline-block; }
+  .card-title-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 18px; }
+  .card-title-row .card-title { margin-bottom: 0; }
+
+  /* Warehouse dropdown */
+  .wh-select {
+    background: var(--surface2); border: 1px solid var(--border); color: var(--text);
+    font-family: 'Inter', sans-serif; font-size: 12px; font-weight: 600;
+    padding: 6px 12px; border-radius: 8px; cursor: pointer; outline: none;
+    transition: border-color .2s; appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%236b7280'/%3E%3C/svg%3E");
+    background-repeat: no-repeat; background-position: right 10px center; padding-right: 28px;
+  }
+  .wh-select:hover, .wh-select:focus { border-color: var(--accent); }
+  .wh-select option { background: #141720; }
+
+  /* Warehouse detail panel */
+  #whDetail { display: none; margin-top: 0; }
+  #whDetail.visible { display: block; }
+
+  .detail-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; margin-bottom: 36px; }
+  @media (max-width: 1000px) { .detail-grid { grid-template-columns: 1fr 1fr; } }
+  @media (max-width: 600px)  { .detail-grid { grid-template-columns: 1fr; } }
+
+  .detail-card { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 22px 20px; }
+  .detail-card-title { font-family: 'DM Mono', monospace; font-size: 10px; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); margin-bottom: 18px; display: flex; align-items: center; gap: 8px; }
+  .detail-card-title::before { content:''; width:6px; height:6px; border-radius:50%; background:var(--accent); display:inline-block; }
+
+  /* Customer rows */
+  .cust-row { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+  .cust-rank { font-family: 'Inter', sans-serif; font-size: 11px; font-weight: 700; color: var(--muted); width: 18px; flex-shrink: 0; }
+  .cust-name { font-size: 13px; font-weight: 600; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .cust-bar-bg { width: 80px; height: 5px; background: var(--border); border-radius: 3px; overflow: hidden; flex-shrink: 0; }
+  .cust-bar-fill { height: 100%; border-radius: 3px; background: var(--accent); }
+  .cust-cnt { font-family: 'Inter', sans-serif; font-size: 12px; font-weight: 700; color: var(--accent); width: 28px; text-align: right; flex-shrink: 0; }
+
+  /* Status rows (reused in detail) */
+  .srow { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+  .sdot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+  .sname { font-family: 'DM Mono', monospace; font-size: 10px; color: var(--muted); width: 90px; flex-shrink: 0; }
+  .sbar-bg { flex: 1; height: 5px; background: var(--border); border-radius: 3px; overflow: hidden; }
+  .sbar-fill { height: 100%; border-radius: 3px; }
+  .scnt { font-family: 'Inter', sans-serif; font-size: 12px; font-weight: 600; color: var(--text); width: 30px; text-align: right; flex-shrink: 0; }
+
+  /* Product rows */
+  .prod-row { display: flex; align-items: flex-start; gap: 10px; margin-bottom: 12px; padding-bottom: 12px; border-bottom: 1px solid var(--border); }
+  .prod-row:last-child { border-bottom: none; margin-bottom: 0; padding-bottom: 0; }
+  .prod-rank { font-family: 'Inter', sans-serif; font-size: 11px; font-weight: 700; color: var(--muted); width: 18px; flex-shrink: 0; margin-top: 1px; }
+  .prod-name { font-size: 12px; font-weight: 500; flex: 1; line-height: 1.4; color: var(--text); }
+  .prod-cnt { font-family: 'Inter', sans-serif; font-size: 12px; font-weight: 700; color: var(--accent); white-space: nowrap; flex-shrink: 0; }
+
+  /* Warehouse overview cards (bottom section) */
+  .wh-grid { display: grid; grid-template-columns: repeat(auto-fill,minmax(280px,1fr)); gap: 16px; }
+  .wh-card { background: var(--surface); border: 1px solid var(--border); border-left: 3px solid var(--wc,var(--accent)); border-radius: 14px; padding: 22px 20px; }
+  .wh-name { font-size: 14px; font-weight: 700; margin-bottom: 3px; }
+  .wh-total { font-family: 'Inter', sans-serif; font-size: 11px; font-weight: 600; color: var(--muted); margin-bottom: 18px; }
+
+  /* Highlight banner inside detail */
+  .wh-banner {
+    background: linear-gradient(135deg, rgba(232,255,71,0.07), rgba(71,184,255,0.05));
+    border: 1px solid rgba(232,255,71,0.15);
+    border-radius: 12px; padding: 16px 20px; margin-bottom: 20px;
+    display: flex; align-items: center; gap: 24px; flex-wrap: wrap;
+  }
+  .wh-banner-name { font-size: 20px; font-weight: 800; letter-spacing: -0.5px; }
+  .wh-banner-stat { text-align: center; }
+  .wh-banner-stat .val { font-family: 'Inter', sans-serif; font-size: 22px; font-weight: 800; color: var(--accent); letter-spacing: -0.5px; display: block; }
+  .wh-banner-stat .lbl { font-family: 'DM Mono', monospace; font-size: 9px; color: var(--muted); letter-spacing: .1em; text-transform: uppercase; }
+  .wh-banner-divider { width: 1px; height: 36px; background: var(--border); }
+
+  /* Empty / loading */
+  #empty { text-align: center; padding: 90px 20px; color: var(--muted); font-family: 'DM Mono', monospace; font-size: 13px; }
+  #empty .icon { font-size: 52px; margin-bottom: 16px; }
+  #dashboard { display: none; }
+  #loading { display: none; text-align: center; padding: 80px 20px; }
+  .spinner { width: 32px; height: 32px; border: 2px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin .7s linear infinite; margin: 0 auto 14px; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* Fade in for detail panel */
+  @keyframes fadeIn { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:translateY(0); } }
+  .fade-in { animation: fadeIn .25s ease both; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <div>
+      <h1>Inventory Orders<br><span>2026 Dashboard</span></h1>
+      <p class="subtitle" id="subtitle">UPLOAD CSV TO BEGIN — FIRSTBASE WAREHOUSE ANALYTICS</p>
+    </div>
+    <div class="upload-box" id="dropZone" onclick="document.getElementById('fileInput').click()">
+      <strong>📂 Load CSV Data</strong>
+      <p>Drop file or click to browse</p>
+      <span id="fname"></span>
+      <input type="file" id="fileInput" accept=".csv">
+    </div>
+  </header>
+
+  <div id="loading"><div class="spinner"></div><p style="font-family:monospace;font-size:12px;color:var(--muted)">Processing data...</p></div>
+
+  <div id="empty">
+    <div class="icon">📊</div>
+    Load <strong style="color:var(--text)">inventory_orders_report_2026-03-03.csv</strong> to generate the dashboard
+  </div>
+
+  <div id="dashboard">
+
+    <!-- KPIs -->
+    <div class="kpi-grid" id="kpiGrid"></div>
+
+    <!-- Charts row: Warehouse dropdown + Status donut -->
+    <p class="section-title">Orders by Warehouse &amp; Status</p>
+    <div class="charts-row" style="margin-bottom:18px;">
+
+      <!-- Warehouse selector card -->
+      <div class="chart-card">
+        <div class="card-title-row">
+          <div class="card-title">Orders by Warehouse</div>
+          <select class="wh-select" id="whSelect" onchange="selectWarehouse(this.value)">
+            <option value="">— Select warehouse —</option>
+          </select>
+        </div>
+        <!-- Summary bar chart (all warehouses) -->
+        <div class="chart-wrap" style="height:240px; overflow:hidden;">
+          <canvas id="chartWH"></canvas>
+        </div>
+      </div>
+
+      <!-- Status donut -->
+      <div class="chart-card">
+        <div class="card-title" id="statusCardTitle">Status Breakdown — All Warehouses</div>
+        <div class="chart-wrap"><canvas id="chartStatus"></canvas></div>
+      </div>
+
+    </div>
+
+    <!-- Warehouse detail panel (shown on selection) -->
+    <div id="whDetail">
+      <div id="whBanner" class="wh-banner fade-in"></div>
+      <div class="detail-grid fade-in" id="detailGrid"></div>
+    </div>
+
+    <!-- Monthly line -->
+    <div class="charts-row" style="margin-bottom:36px">
+      <div class="chart-card full">
+        <div class="card-title">Monthly Orders — 2026 YTD</div>
+        <div class="chart-wrap short"><canvas id="chartMonthly"></canvas></div>
+      </div>
+    </div>
+
+    <!-- All-warehouse status cards -->
+    <p class="section-title">Warehouse Breakdown by Status</p>
+    <div class="wh-grid" id="whGrid"></div>
+  </div>
+
+</div>
+<script>
+const STATUS_COLORS = {
+  ORDERED:'#e8ff47', PROCESSING:'#47b8ff', SHIPPED:'#4fffb0',
+  COMPLETE:'#6b7280', CANCELLED:'#ff4747', PENDING:'#ffaa47',
+  NOT_RECEIVED:'#ff47a0'
+};
+const WH_COLORS = ['#e8ff47','#47b8ff','#4fffb0','#ff6b47','#b847ff','#ffaa47','#ff47a0','#47ffee','#ffd447','#aeff47'];
+const sc = s => STATUS_COLORS[(s||'').toUpperCase()] || '#b847ff';
+
+function normWH(name) {
+  if (!name) return 'Unknown';
+  const n = name.trim();
+  if (n.includes('Coventry'))     return 'Coventry UK';
+  if (n.includes('Oshawa'))       return 'Oshawa CAN';
+  if (n.includes('Germany'))      return 'Germany EU';
+  if (n.includes('SLC'))          return 'Warehouse SLC';
+  if (n.includes('NYC'))          return 'Warehouse NYC';
+  if (n.includes('Kuala Lumpur')) return 'Kuala Lumpur';
+  if (n.includes('Chennai'))      return 'Chennai';
+  if (n.includes('Manila'))       return 'Manila';
+  if (n.includes('Singapore'))    return 'Singapore';
+  if (n.includes('Sydney'))       return 'Sydney AUS';
+  if (n.includes('Mexico'))       return 'Mexico';
+  if (n.includes('UK') && !n.includes('Coventry')) return 'Warehouse UK';
+  if (n === 'Warehouse - EU' || n === 'Warehouse EU') return 'Warehouse EU';
+  return n.replace('Warehouse - ','').replace('Warehouse ','');
+}
+
+let charts = {};
+let globalData = {}; // stores processed data for drill-down
+
+function destroyChart(id) { if (charts[id]) { charts[id].destroy(); delete charts[id]; } }
+
+function selectWarehouse(wh) {
+  const detail = document.getElementById('whDetail');
+  if (!wh) {
+    detail.classList.remove('visible');
+    // Reset status donut title
+    document.getElementById('statusCardTitle').textContent = 'Status Breakdown — All Warehouses';
+    renderStatusChart(globalData.sortedSt, globalData.total);
+    return;
+  }
+  detail.classList.add('visible');
+
+  const rows = globalData.rawRows.filter(r => normWH(r.warehouse_name) === wh);
+  const total = rows.length;
+  const totalQty = rows.reduce((s,r) => s + (parseInt(r.quantity)||1), 0);
+
+  // By status
+  const byStatus = {};
+  rows.forEach(r => {
+    const st = (r.status||'UNKNOWN').toUpperCase();
+    byStatus[st] = (byStatus[st]||0)+1;
+  });
+  const sortedSt = Object.entries(byStatus).sort((a,b)=>b[1]-a[1]);
+
+  // Top 5 customers
+  const byCust = {};
+  rows.forEach(r => {
+    const c = r.organization_name || 'Unknown';
+    if (!byCust[c]) byCust[c] = { orders:0, qty:0 };
+    byCust[c].orders++;
+    byCust[c].qty += parseInt(r.quantity)||1;
+  });
+  const top5 = Object.entries(byCust).sort((a,b)=>b[1].orders-a[1].orders).slice(0,5);
+  const maxCust = top5[0]?.[1].orders || 1;
+
+  // Top 5 products
+  const byProd = {};
+  rows.forEach(r => {
+    const p = (r.product_title||'Unknown').replace(/"/g,'').trim();
+    // Shorten product name: take up to first 55 chars
+    const short = p.length > 55 ? p.substring(0,52)+'…' : p;
+    byProd[short] = (byProd[short]||0)+1;
+  });
+  const top5prod = Object.entries(byProd).sort((a,b)=>b[1]-a[1]).slice(0,5);
+
+  // Banner
+  const whIdx = globalData.sortedWH.findIndex(([w])=>w===wh);
+  const whColor = WH_COLORS[whIdx % WH_COLORS.length];
+  const cancelled = byStatus['CANCELLED']||0;
+  const active = total - cancelled;
+
+  document.getElementById('whBanner').innerHTML = `
+    <div class="wh-banner-name" style="color:${whColor}">${wh}</div>
+    <div class="wh-banner-divider"></div>
+    <div class="wh-banner-stat"><span class="val">${total}</span><span class="lbl">Total Orders</span></div>
+    <div class="wh-banner-stat"><span class="val">${totalQty}</span><span class="lbl">Units</span></div>
+    <div class="wh-banner-stat"><span class="val">${active}</span><span class="lbl">Active Orders</span></div>
+    <div class="wh-banner-stat"><span class="val">${cancelled}</span><span class="lbl" style="color:#ff4747">Cancelled</span></div>
+    <div class="wh-banner-stat"><span class="val">${Object.keys(byCust).length}</span><span class="lbl">Customers</span></div>
+  `;
+
+  // Top 5 customers card
+  const custHTML = top5.map(([name, d], i) => {
+    const pct = Math.round(d.orders / maxCust * 100);
+    return `<div class="cust-row">
+      <div class="cust-rank">${i+1}</div>
+      <div class="cust-name" title="${name}">${name}</div>
+      <div class="cust-bar-bg"><div class="cust-bar-fill" style="width:${pct}%;background:${whColor}"></div></div>
+      <div class="cust-cnt">${d.orders}</div>
+    </div>`;
+  }).join('');
+
+  // Status breakdown card
+  const statusHTML = sortedSt.map(([st, cnt]) => {
+    const pct = Math.round(cnt/total*100);
+    return `<div class="srow">
+      <div class="sdot" style="background:${sc(st)}"></div>
+      <div class="sname">${st}</div>
+      <div class="sbar-bg"><div class="sbar-fill" style="width:${pct}%;background:${sc(st)}"></div></div>
+      <div class="scnt">${cnt}</div>
+    </div>`;
+  }).join('');
+
+  // Top 5 products card
+  const prodHTML = top5prod.map(([name, cnt], i) => `
+    <div class="prod-row">
+      <div class="prod-rank">${i+1}</div>
+      <div class="prod-name">${name}</div>
+      <div class="prod-cnt">${cnt}</div>
+    </div>`).join('');
+
+  document.getElementById('detailGrid').innerHTML = `
+    <div class="detail-card">
+      <div class="detail-card-title">Top 5 Customers</div>
+      ${custHTML}
+    </div>
+    <div class="detail-card">
+      <div class="detail-card-title">Status Breakdown</div>
+      ${statusHTML}
+    </div>
+    <div class="detail-card">
+      <div class="detail-card-title">Top 5 Products</div>
+      ${prodHTML}
+    </div>
+  `;
+
+  // Update the status donut to reflect selected warehouse
+  document.getElementById('statusCardTitle').textContent = `Status — ${wh}`;
+  renderStatusChart(sortedSt, total);
+
+  // Scroll detail into view smoothly
+  detail.scrollIntoView({ behavior:'smooth', block:'nearest' });
+}
+
+function renderStatusChart(sortedSt, total) {
+  destroyChart('st');
+  charts.st = new Chart(document.getElementById('chartStatus'), {
+    type:'doughnut',
+    data:{
+      labels: sortedSt.map(([s])=>s),
+      datasets:[{ data:sortedSt.map(([,v])=>v), backgroundColor:sortedSt.map(([s])=>sc(s)), borderColor:'#0d0f14', borderWidth:3, hoverOffset:8 }]
+    },
+    options:{ responsive:true, maintainAspectRatio:false, cutout:'62%',
+      plugins:{
+        legend:{ display:true, position:'right', labels:{ color:'#6b7280', font:{family:'DM Mono',size:10}, padding:10, boxWidth:9, boxHeight:9 } },
+        tooltip:{ backgroundColor:'#141720', borderColor:'#1e2230', borderWidth:1, titleColor:'#f0f2ff', bodyColor:'#6b7280',
+          callbacks:{ label:ctx=>` ${ctx.raw} (${((ctx.raw/total)*100).toFixed(1)}%)` }
+        }
+      }
+    }
+  });
+}
+
+function render(rows) {
+  const data2026 = rows.filter(r =>
+    r.created_at && r.created_at.startsWith('2026') &&
+    normWH(r.warehouse_name) !== 'Warehouse SLC'
+  );
+  if (!data2026.length) { alert('No 2026 data found in this file.'); return; }
+
+  const byWH = {}, byStatus = {}, byMonth = {};
+  const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  let total = 0, totalQty = 0;
+
+  data2026.forEach(r => {
+    const wh = normWH(r.warehouse_name);
+    const st = (r.status||'UNKNOWN').toUpperCase();
+    const qty = parseInt(r.quantity)||1;
+    const mo = MONTHS[parseInt((r.created_at||'').substring(5,7))-1] || '?';
+    total++; totalQty += qty;
+    if (!byWH[wh]) byWH[wh] = { total:0, statuses:{} };
+    byWH[wh].total++;
+    byWH[wh].statuses[st] = (byWH[wh].statuses[st]||0)+1;
+    byStatus[st] = (byStatus[st]||0)+1;
+    byMonth[mo]  = (byMonth[mo]||0)+1;
+  });
+
+  const sortedWH = Object.entries(byWH).sort((a,b)=>b[1].total-a[1].total);
+  const sortedSt = Object.entries(byStatus).sort((a,b)=>b[1]-a[1]);
+  const monthData = MONTHS.filter(m=>byMonth[m]).map(m=>({ m, v:byMonth[m] }));
+
+  // Store for drill-down
+  globalData = { rawRows: data2026, sortedWH, sortedSt, total, totalQty };
+
+  document.getElementById('subtitle').textContent =
+    `${total.toLocaleString()} ORDERS · EXCL. WAREHOUSE SLC · JAN–MAR 2026`;
+
+  // KPIs
+  const kpis = [
+    { label:'Total Orders', val:total.toLocaleString(),                    color:'#e8ff47' },
+    { label:'Total Units',  val:totalQty.toLocaleString(),                 color:'#47b8ff' },
+    { label:'Warehouses',   val:sortedWH.length,                           color:'#4fffb0' },
+    { label:'Ordered',      val:(byStatus.ORDERED||0).toLocaleString(),    color:'#e8ff47' },
+    { label:'Processing',   val:(byStatus.PROCESSING||0).toLocaleString(), color:'#47b8ff' },
+    { label:'Shipped',      val:(byStatus.SHIPPED||0).toLocaleString(),    color:'#4fffb0' },
+    { label:'Cancelled',    val:(byStatus.CANCELLED||0).toLocaleString(),  color:'#ff4747' },
+  ];
+  document.getElementById('kpiGrid').innerHTML = kpis.map(k=>`
+    <div class="kpi" style="--kc:${k.color}">
+      <div class="kpi-label">${k.label}</div>
+      <div class="kpi-val">${k.val}</div>
+    </div>`).join('');
+
+  // Populate dropdown
+  const sel = document.getElementById('whSelect');
+  sel.innerHTML = '<option value="">— Select warehouse —</option>' +
+    sortedWH.map(([w]) => `<option value="${w}">${w}</option>`).join('');
+
+  // Bar chart (fixed size, no resize loop)
+  const whCanvas = document.getElementById('chartWH');
+  const whWrap   = whCanvas.parentElement;
+  whCanvas.style.width  = whWrap.offsetWidth + 'px';
+  whCanvas.style.height = '240px';
+  destroyChart('wh');
+  charts.wh = new Chart(whCanvas, {
+    type:'bar',
+    data:{
+      labels: sortedWH.map(([w])=>w),
+      datasets:[{
+        data: sortedWH.map(([,d])=>d.total),
+        backgroundColor: sortedWH.map((_,i)=>WH_COLORS[i%WH_COLORS.length]+'cc'),
+        hoverBackgroundColor: sortedWH.map((_,i)=>WH_COLORS[i%WH_COLORS.length]),
+        borderRadius: 5, borderSkipped: false
+      }]
+    },
+    options:{
+      responsive:false, maintainAspectRatio:false,
+      onClick(e, els) {
+        if (els.length) {
+          const wh = sortedWH[els[0].index][0];
+          document.getElementById('whSelect').value = wh;
+          selectWarehouse(wh);
+        }
+      },
+      plugins:{ legend:{display:false}, tooltip:{ backgroundColor:'#141720', borderColor:'#1e2230', borderWidth:1, titleColor:'#f0f2ff', bodyColor:'#6b7280', padding:10,
+        callbacks:{ label:ctx=>` ${ctx.raw} orders — click to drill down` }
+      }},
+      scales:{
+        x:{ grid:{ color:'#1e2230' }, ticks:{ color:'#6b7280', font:{family:'DM Mono',size:10}, maxRotation:35 } },
+        y:{ grid:{ color:'#1e2230' }, ticks:{ color:'#6b7280', font:{family:'Inter',size:10} } }
+      }
+    }
+  });
+
+  // Status donut (all warehouses)
+  renderStatusChart(sortedSt, total);
+
+  // Monthly line
+  destroyChart('mo');
+  charts.mo = new Chart(document.getElementById('chartMonthly'), {
+    type:'line',
+    data:{
+      labels: monthData.map(d=>d.m),
+      datasets:[{ data:monthData.map(d=>d.v), borderColor:'#e8ff47', backgroundColor:'rgba(232,255,71,0.07)', pointBackgroundColor:'#e8ff47', pointRadius:5, fill:true, tension:.4 }]
+    },
+    options:{ responsive:true, maintainAspectRatio:false,
+      plugins:{ legend:{display:false}, tooltip:{ backgroundColor:'#141720', borderColor:'#1e2230', borderWidth:1, titleColor:'#f0f2ff', bodyColor:'#6b7280', padding:10, callbacks:{label:ctx=>` ${ctx.raw} orders`} } },
+      scales:{
+        x:{ grid:{color:'#1e2230'}, ticks:{color:'#6b7280', font:{family:'DM Mono',size:10}} },
+        y:{ grid:{color:'#1e2230'}, ticks:{color:'#6b7280', font:{family:'Inter',size:10}} }
+      }
+    }
+  });
+
+  // Bottom warehouse cards
+  document.getElementById('whGrid').innerHTML = sortedWH.map(([wh,d],i)=>{
+    const srows = Object.entries(d.statuses).sort((a,b)=>b[1]-a[1]).map(([st,cnt])=>{
+      const pct = Math.round(cnt/d.total*100);
+      return `<div class="srow">
+        <div class="sdot" style="background:${sc(st)}"></div>
+        <div class="sname">${st}</div>
+        <div class="sbar-bg"><div class="sbar-fill" style="width:${pct}%;background:${sc(st)}"></div></div>
+        <div class="scnt">${cnt}</div>
+      </div>`;
+    }).join('');
+    return `<div class="wh-card" style="--wc:${WH_COLORS[i%WH_COLORS.length]}">
+      <div class="wh-name">${wh}</div>
+      <div class="wh-total">${d.total} orders</div>
+      ${srows}
+    </div>`;
+  }).join('');
+
+  document.getElementById('empty').style.display    = 'none';
+  document.getElementById('dashboard').style.display = 'block';
+}
+
+function handleFile(file) {
+  if (!file) return;
+  document.getElementById('fname').textContent = file.name;
+  document.getElementById('loading').style.display   = 'block';
+  document.getElementById('empty').style.display     = 'none';
+  document.getElementById('dashboard').style.display = 'none';
+  Papa.parse(file, {
+    header:true, skipEmptyLines:true,
+    complete(res) {
+      document.getElementById('loading').style.display = 'none';
+      render(res.data);
+    }
+  });
+}
+
+document.getElementById('fileInput').addEventListener('change', e=>handleFile(e.target.files[0]));
+const dz = document.getElementById('dropZone');
+dz.addEventListener('dragover',  e=>{ e.preventDefault(); dz.classList.add('drag'); });
+dz.addEventListener('dragleave', ()=>dz.classList.remove('drag'));
+dz.addEventListener('drop',      e=>{ e.preventDefault(); dz.classList.remove('drag'); handleFile(e.dataTransfer.files[0]); });
+</script>
+</body>
+</html>
